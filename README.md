@@ -66,10 +66,10 @@ Example `airflow_env_params`
   "airflow_home_dir": "/opt/airflow",
   "airflow_output": "/opt/airflow/output",
   "gcp_conn_id": "de",
-  "dbt_bin": /opt/airflow/.local/bin/dbt,
-  "dbt_project_dir": /opt/airflow/p2p,
-  "dbt_profiles_dir": /opt/airflow/.dbt,
-  "slack_alerting_channel":de_alerting_stage,
+  "dbt_bin": "/opt/airflow/.local/bin/dbt",
+  "dbt_project_dir": "/opt/airflow/p2p",
+  "dbt_profiles_dir": "/opt/airflow/.dbt",
+  "slack_alerting_channel": "de_alerting_stage",
   "bq_dataset": "raw_data",
   "bq_project_id": "mbelt3-dev"
 }
