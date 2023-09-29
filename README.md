@@ -85,7 +85,7 @@ Create the following Airflow Connections in the Airflow UI
 - `mbelt3_polkadot`: PostgreSQL connection for the Polkadot MBELT3 database
 
 
-### Additional Notes
+## Additional Notes
 
 - Ensure that your PostgreSQL database and Google BigQuery project are properly configured and accessible from the environment where Airflow is running.
 
