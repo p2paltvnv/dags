@@ -73,6 +73,7 @@ Example `airflow_env_params`
   "bq_dataset": "raw_data",
   "bq_project_id": "mbelt3-dev"
 }
+```
 
 #### Airflow Connections
 
