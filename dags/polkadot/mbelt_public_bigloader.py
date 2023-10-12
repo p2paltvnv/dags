@@ -38,9 +38,9 @@ def branch_metrics(**op_kwargs):
 
 for module_nm in [
     'static_files.config_bigloader_mbelt3_polkadot',
-    'static_files.config_bigloader_mbelt3_kusama',
-    'static_files.config_bigloader_mbelt3_moonriver',
-    'static_files.config_bigloader_mbelt3_moonbeam',
+    # 'static_files.config_bigloader_mbelt3_kusama',
+    # 'static_files.config_bigloader_mbelt3_moonriver',
+    # 'static_files.config_bigloader_mbelt3_moonbeam',
 ]:
     module_nm = f'polkadot.{module_nm}'
     mod = __import__(module_nm, fromlist=[''])
@@ -93,4 +93,3 @@ for module_nm in [
                 create_table >>
                 finish
         )
-

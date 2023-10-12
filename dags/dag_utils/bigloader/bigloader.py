@@ -55,47 +55,49 @@ def extract_data_to_s3(**op_kwargs):
     logical_date_subdir = logical_date.strftime("%H%M%S")
     file_dir = f'{file_dir}{logical_date_dir}/{logical_date_subdir}/' if len(file_dir) > 0 \
         else f'{logical_date_dir}/{logical_date_subdir}/'
-    
+
     output_dir = str(Variable.get("airflow_env_params", deserialize_json=True)['airflow_output']) + '/'
-    
+    os.makedirs(output_dir, exist_ok=True)
+
     with TemporaryDirectory(dir=output_dir) as tempdir:
         file_path = os.path.join(tempdir, file_name)
         logging.info(f"output_dir: {file_path}")
 
         conn_param = BaseHook.get_connection(conn_id)
         conn_type = conn_param.conn_type
-    
+
         if conn_type == 'postgres':
             conn = psycopg2.connect(host=conn_param.host,
                                     port=conn_param.port,
                                     database=conn_param.schema,
                                     user=conn_param.login,
                                     password=conn_param.password)
-    
+
             db_cursor = conn.cursor()
-    
+
             if query:
                 copy_query = f"COPY ({query}) TO STDOUT WITH CSV DELIMITER ';'"
                 with open(file_path, 'w') as f_output:
                     db_cursor.copy_expert(copy_query, f_output)
-    
+
             elif id_col_name:
                 db_cursor.execute(f"""SELECT max({id_col_name}) FROM {table_name}""")
                 row_num = db_cursor.fetchone()[0]
                 print('Rows: ', row_num)
-    
-                row_min_pg = 0
+
+                db_cursor.execute(f"""SELECT min({id_col_name}) FROM {table_name}""")
+                row_min_pg = db_cursor.fetchone()[0]
                 row_max_pg = row_num
-    
+
                 if update_type == 'increment':
                     n = get_last_id_bq(table_id, id_col_name)
+                    if n < row_min_pg:
+                        n = row_min_pg
                 else:
-                    n = 0
-    
+                    n = row_min_pg
+
                 if file_size_limit_rows:
                     if update_type != 'increment':
-                        db_cursor.execute(f"""SELECT min({id_col_name}) FROM {table_name}""")
-                        row_min_pg = db_cursor.fetchone()[0]
                         row_max_pg = row_min_pg + file_size_limit_rows
                         print('update_type: ', 'full')
                     else:
@@ -122,7 +124,7 @@ def extract_data_to_s3(**op_kwargs):
                 copy_query = f"COPY (SELECT distinct * FROM {source_name}) TO STDOUT WITH CSV DELIMITER ';'"
                 with open(file_path, 'w') as f_output:
                     db_cursor.copy_expert(copy_query, f_output)
-    
+
             conn.close()
         elif conn_type == 'clickhouse':
             host = conn_param.host
@@ -130,13 +132,13 @@ def extract_data_to_s3(**op_kwargs):
             password = conn_param.password
             database = conn_param.schema
             port = conn_param.port if conn_param.port else 9000
-    
+
             client = clickhouse_driver.Client(host=host,
                                             database=database,
                                             user=user,
                                             password=password,
                                             port=port)
-    
+
             if query:
                 subp_res = subprocess.run(f'clickhouse-client --host {host} --user {user} --password {password} '
                                           f'--query "{query}" --format CSV > {file_path} ', shell=True,
@@ -147,19 +149,19 @@ def extract_data_to_s3(**op_kwargs):
                 # --format CSV > {file_path}')
                 #subprocess.check_output(f'clickhouse-client --host {host} --user {user} --password {password}
                 # --query "{query}" --format CSV > {file_path}')
-    
+
             elif id_col_name:
                 if is_balval:
                     query = f"""SELECT max({id_col_name})+1
-                                FROM (SELECT {id_col_name}, count(1) as n_row FROM {source_name} 
+                                FROM (SELECT {id_col_name}, count(1) as n_row FROM {source_name}
                                 GROUP BY {id_col_name}) t
-                                WHERE n_row >= (SELECT count(1) FROM {source_name} WHERE {id_col_name} = 
+                                WHERE n_row >= (SELECT count(1) FROM {source_name} WHERE {id_col_name} =
                                 (SELECT max({id_col_name})-1 FROM {source_name}))"""
                     row_num = client.execute(query)[0][0]
                 else:
                     row_num = client.execute(f"""SELECT max({id_col_name}) FROM {source_name}""")[0][0]
-                print('Rows ', row_num)                
-    
+                print('Rows ', row_num)
+
                 if update_type == 'increment':
                     n = get_last_id_bq(table_id, id_col_name)
                     print(f'Max {id_col_name} in BQ: ', n)
@@ -198,7 +200,7 @@ def extract_data_to_s3(**op_kwargs):
 
         creds = Variable.get("sa_bigquery_token", deserialize_json=True)
         bucket = Variable.get("bigloader_bucket")
-        
+
         storage_client = storage.Client.from_service_account_info(creds)
         bucket = storage_client.bucket(bucket)
         blob = bucket.blob(file_dir+file_name)
@@ -243,19 +245,22 @@ def create_table_bq(**op_kwargs):
     logical_date = op_kwargs['execution_date']
     logical_date_dir = logical_date.strftime("%Y%m%d")
     logical_date_subdir = logical_date.strftime("%H%M%S")
-    file_dir = f'{file_dir}{logical_date_dir}/{logical_date_subdir}/' if len(file_dir)>0 else f'' 
-
+    file_dir = f'{file_dir}{logical_date_dir}/{logical_date_subdir}/' if len(file_dir)>0 else f''
 
     creds = Variable.get("sa_bigquery_token", deserialize_json=True)
     bucket = Variable.get("bigloader_bucket")
-    
+
     client = bigquery.Client.from_service_account_info(creds)
 
     table_id = f"{project_name}.{dataset_name}.{prefix}{table_name}"
 
+    logging.info('table_id is {}'.format(table_id))
+
     if 'load' in load_table_from:
         if load_table_from == 'load_table_from_uri':
-            job_config = bigquery.LoadJobConfig(schema=schema,
+            logging.info('load_table_from_uri is specified')
+            job_config = bigquery.LoadJobConfig(autodetect=True,
+                                                schema=schema,
                                                   skip_leading_rows=skip_leading_rows,
                                                   source_format=bigquery.SourceFormat.CSV,
                                                   field_delimiter=field_delimiter,
@@ -267,8 +272,10 @@ def create_table_bq(**op_kwargs):
                                                   allow_jagged_rows=allow_jagged_rows,
                                                   allow_quoted_newlines=allow_quoted_newlines)
             uri = f"gs://{bucket}/{file_dir}{file_name}"
+            logging.info('bucket url is {}'.format(uri))
             load_job = client.load_table_from_uri(uri, table_id, job_config=job_config)
         elif load_table_from=='load_table_from_json':
+            logging.info('load_table_from_json is specified')
             job_config = bigquery.LoadJobConfig(autodetect=False,
                                                 write_disposition=write_disposition,
                                                 schema=schema)
@@ -323,8 +330,8 @@ def gather_dwh_delay_time(**op_kwargs):
                       'dwh_delay_time_ms' as name,
                       TIMESTAMP_DIFF(cast(current_datetime() as TIMESTAMP), row_time, MILLISECOND) as value,
                       row_id,
-                      cast(cast(current_datetime() as TIMESTAMP) as TIMESTAMP) as row_time, 
-               from {s} 
+                      cast(cast(current_datetime() as TIMESTAMP) as TIMESTAMP) as row_time,
+               from {s}
                where row_id>{lower_line} and row_id<={top_line}
                """.format(meta='/* {"app": "python_legacy", "owner": "ilia.malyshev@p2p.org"} */', schema=schema,
                           chain=chain, entity_name=entity_name, entity_id=entity_id, s=table_id,
@@ -337,7 +344,7 @@ def clear_ch_balval_validators_summary(**op_kwargs):
     conn_id = op_kwargs['conn_id']
     ti = op_kwargs['ti']
     prev_task_id = op_kwargs['prev_task_id'] if 'prev_task_id' in op_kwargs else 'error'
-    
+
     conn_param = BaseHook.get_connection(conn_id)
     conn_type = conn_param.conn_type
 
