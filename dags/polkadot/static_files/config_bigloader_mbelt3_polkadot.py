@@ -283,6 +283,7 @@ TABLE_CONF = {
         'schema': [
             bigquery.SchemaField("network_id", "INT64"),
             bigquery.SchemaField("account_id", "STRING"),
+            bigquery.SchemaField("blake2_hash", "STRING"),
             bigquery.SchemaField("created_at_block_id", "INT64"),
             bigquery.SchemaField("killed_at_block_id", "INT64"),
             bigquery.SchemaField("judgement_status", "STRING"),
